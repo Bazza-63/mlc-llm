@@ -1,8 +1,11 @@
 # Plan: upgrade ROCm support to ROCm 10.1 (Linux and Windows)
 
-Status: Phases 1–4 are implemented as a TVM patch in `3rdparty/patches/tvm-rocm/` (see its
-README for what is verified). They are waiting for a fork of `mlc-ai/relax`, so the
-submodule pointer can be bumped. Phases 0 and 5–7 are still open. MLC-LLM currently
+Status: Phases 1–4 are implemented on the `rocm-10.1-support` branch of the TVM fork
+`Bazza-63/relax`, which `3rdparty/tvm` now tracks (`.gitmodules`). Verified so far: it compiles
+against the real `therock-10.1` HIP/hipBLAS headers (LLVM 18 for codegen), CMake ROCm
+discovery works across install layouts, and the `tvm.support.rocm` discovery and bitcode
+selection tests pass. Not yet verified: a full Windows build with TheRock's LLVM 24, and
+compiling and running a model. Phases 0 and 5–7 are still open. MLC-LLM currently
 documents ROCm 6.1/6.2 only. ROCm 10.1 ships on Linux and Windows, including as a
 tarball / TheRock build that can live anywhere on disk.
 
