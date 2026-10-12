@@ -6,10 +6,10 @@
   1. Environment variables (Machine / User / current process)
   2. PATH (ROCm entries present, setx truncation, duplicates, missing dirs)
   3. Install layout (DLLs, headers, LLVM, device bitcode)
-  4. Tools on PATH (hipcc, hipconfig, clang, ld.lld, llvm-config) and shadowing
+  4. Tools on PATH (amdclang, amdclang++, hipcc, hipconfig, clang, ld.lld, llvm-config) and shadowing
   5. HIP runtime DLL load + device enumeration (no compiler needed)
   6. TVM-style device code path: OpenCL -> amdgcn object (+device libs) -> ld.lld -> .hsaco
-  7. HIP program: build with hipcc, run a kernel (expf/sqrtf) on the GPU, verify results,
+  7. HIP program: build with amdclang++ (fallback hipcc), run a kernel (expf/sqrtf) on the GPU, verify results,
      and load the .hsaco from step 6 with hipModuleLoad (what TVM does at runtime)
   8. What TVM/MLC-LLM's current code would find (expected failures are reported as INFO)
 
@@ -17,7 +17,7 @@
   powershell -ExecutionPolicy Bypass -File .\rocm_windows_check.ps1
   powershell -ExecutionPolicy Bypass -File .\rocm_windows_check.ps1 -Arch gfx1100 -KeepTemp
 
-  Run from a fresh terminal. If hipcc cannot link, run from
+  Run from a fresh terminal. If the HIP build cannot find C++ headers, run from
   "x64 Native Tools Command Prompt for VS" (needs MSVC + Windows SDK).
 #>
 param(
@@ -61,6 +61,18 @@ function Import-VsEnv {
     if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] }
   }
   if ($env:INCLUDE) { return $vcvars } else { return $null }
+}
+
+function Find-RocmTool([string]$name) {
+  foreach ($d in @($script:llvmBin, $script:bin)) {
+    if ($d) {
+      $f = Join-Path $d "$name.exe"
+      if (Test-Path -LiteralPath $f) { return $f }
+    }
+  }
+  $c = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($c) { return $c.Source }
+  return $null
 }
 
 function Try-LoadLibrary([string]$name) {
@@ -179,7 +191,7 @@ if (Test-Path -LiteralPath $bcDir -PathType Container) {
 
 # ---------------------------------------------------------------------------
 Section "4. Tools on PATH"
-foreach ($t in @('hipcc', 'hipconfig', 'hipInfo', 'clang', 'ld.lld', 'llvm-config', 'amdgpu-arch', 'offload-arch')) {
+foreach ($t in @('amdclang', 'amdclang++', 'hipcc', 'hipconfig', 'hipInfo', 'clang', 'ld.lld', 'llvm-config', 'amdgpu-arch', 'offload-arch')) {
   $cmd = Get-Command $t -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $cmd) { Info "$t not on PATH"; continue }
   $src = $cmd.Source
@@ -191,9 +203,12 @@ if ($hipconfig) {
   $r = Run-Native $hipconfig.Source @('--version'); Info "hipconfig --version: $($r.Out.Trim())"
   $r = Run-Native $hipconfig.Source @('--platform'); Info "hipconfig --platform: $($r.Out.Trim())"
 }
-$clangExe = Join-Path $llvmBin 'clang.exe'
-if (Test-Path -LiteralPath $clangExe) {
-  $r = Run-Native $clangExe @('--version'); Info "ROCm clang: $(($r.Out -split "`n")[0])"
+$clangExe = Find-RocmTool 'amdclang'
+if (-not $clangExe) { $clangExe = Join-Path $llvmBin 'clang.exe'; Warn "amdclang not found; using $clangExe" }
+$clangxxExe = Find-RocmTool 'amdclang++'
+if (-not $clangxxExe) { Warn "amdclang++ not found" }
+foreach ($c in @($clangExe, $clangxxExe)) {
+  if ($c -and (Test-Path -LiteralPath $c)) { $r = Run-Native $c @('--version'); Info "$(Split-Path -Leaf $c): $(($r.Out -split "`n")[0])" }
 }
 
 # ---------------------------------------------------------------------------
@@ -316,13 +331,13 @@ __kernel void vexp_cl(__global float* y, __global const float* x, int n) {
   $r = Run-Native $clangExe @('-x', 'cl', '-cl-std=CL2.0', '-Xclang', '-finclude-default-header',
     '--target=amdgcn-amd-amdhsa', "-mcpu=$Arch", "--rocm-device-lib-path=$bcDir", '-O3', '-c', $cl, '-o', $obj)
   if ($r.Code -eq 0) {
-    Pass "clang compiled kernel for $Arch with device libs from $bcDir"
+    Pass "$(Split-Path -Leaf $clangExe) compiled kernel for $Arch with device libs from $bcDir"
     $out = Join-Path $tmp 'k.hsaco'
     $r = Run-Native $lldExe @('--no-undefined', '-shared', $obj, '-o', $out)
     if ($r.Code -eq 0) { Pass "ld.lld --no-undefined -shared produced $out"; $hsaco = $out }
     else { Fail "ld.lld link failed:`n$($r.Out)" }
   } else {
-    Fail "clang device compile failed:`n$($r.Out)"
+    Fail "$(Split-Path -Leaf $clangExe) device compile failed:`n$($r.Out)"
   }
 } else {
   Info "Skipped (needs arch, clang.exe and ld.lld.exe)"
@@ -330,8 +345,8 @@ __kernel void vexp_cl(__global float* y, __global const float* x, int n) {
 
 # ---------------------------------------------------------------------------
 Section "7. HIP program: build, run kernel on GPU, load .hsaco"
-$hipcc = Get-Command hipcc -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($Arch -and $hipcc -and $deviceCount -gt 0) {
+$hipcc = Find-RocmTool 'hipcc'
+if ($Arch -and ($clangxxExe -or $hipcc) -and $deviceCount -gt 0) {
   $src = Join-Path $tmp 'check.hip'
   Set-Content -LiteralPath $src -Encoding ASCII -Value @'
 #include <hip/hip_runtime.h>
@@ -387,13 +402,37 @@ int main(int argc, char** argv) {
 '@
   $vsEnv = Import-VsEnv
   if ($vsEnv) { Info "MSVC environment: $vsEnv" }
-  else { Warn "No MSVC environment found (needs Visual Studio 2022 or Build Tools with 'Desktop development with C++'); hipcc cannot find C++ headers without it" }
+  else { Warn "No MSVC environment found (Visual Studio 2022 / Build Tools with 'Desktop development with C++'). On Windows, amdclang++ and hipcc both use the MSVC C++ headers and CRT." }
   $exe = Join-Path $tmp 'check.exe'
-  $r = Run-Native $hipcc.Source @("--offload-arch=$Arch", '-O2', $src, '-o', $exe)
-  if ($r.Code -ne 0 -or -not (Test-Path -LiteralPath $exe)) {
-    Fail "hipcc build failed (missing C++ headers or link errors mean MSVC/Windows SDK is not set up):`n$($r.Out)"
-  } else {
-    Pass "hipcc built a HIP program for $Arch"
+  $libDir = Join-Path $root 'lib'
+  $attempts = @()
+  if ($clangxxExe) {
+    $attempts += ,@{ Name = 'amdclang++'; Exe = $clangxxExe; Args = @('-x', 'hip', "--offload-arch=$Arch", "--rocm-path=$root",
+      "--rocm-device-lib-path=$bcDir", '-O2', $src, '--hip-link', '-fuse-ld=lld', "-L$libDir", '-lamdhip64', '-o', $exe) }
+  }
+  if ($hipcc) {
+    $attempts += ,@{ Name = 'hipcc'; Exe = $hipcc; Args = @("--offload-arch=$Arch", '-O2', $src, '-o', $exe) }
+  }
+  $built = $null
+  foreach ($a in $attempts) {
+    Remove-Item -LiteralPath $exe -ErrorAction SilentlyContinue
+    $r = Run-Native $a.Exe $a.Args
+    if ($r.Code -eq 0 -and (Test-Path -LiteralPath $exe)) { Pass "$($a.Name) built a HIP program for $Arch"; $built = $a.Name; break }
+    Warn "$($a.Name) build failed:`n$($r.Out)"
+    if ($r.Out -match 'file not found|Could not find standard C\+\+ header') {
+      $v = Run-Native $a.Exe (@('-v', '-fsyntax-only') + ($a.Args | Where-Object { $_ -ne '-o' -and $_ -ne $exe -and $_ -ne '--hip-link' }))
+      $inc = $false
+      $lines = foreach ($l in ($v.Out -split "`n")) {
+        if ($l -match 'search starts here') { $inc = $true; continue }
+        if ($l -match 'End of search list') { $inc = $false; continue }
+        if ($inc) { $l.Trim() }
+      }
+      Info "$($a.Name) C++ include search path (no MSVC 'VC\Tools\MSVC\...\include' entry means MSVC headers are not visible):"
+      $lines | Select-Object -Unique | ForEach-Object { Info "  $_" }
+    }
+  }
+  if (-not $built) { Fail "HIP program could not be built with amdclang++ or hipcc (see warnings above)" }
+  if ($built) {
     $runArgs = @(); if ($hsaco) { $runArgs = @($hsaco) }
     $r = Run-Native $exe $runArgs
     $r.Out -split "`n" | Where-Object { $_ -match '^DEVICE' } | ForEach-Object { Info $_ }
@@ -406,7 +445,7 @@ int main(int argc, char** argv) {
     }
   }
 } else {
-  Info "Skipped (needs arch, hipcc on PATH and a visible GPU)"
+  Info "Skipped (needs arch, amdclang++ or hipcc, and a visible GPU)"
 }
 
 # ---------------------------------------------------------------------------
