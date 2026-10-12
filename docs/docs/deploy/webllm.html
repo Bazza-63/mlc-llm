@@ -191,17 +191,22 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../compilation/convert_weights.html">Convert Model Weights</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../compilation/compile_models.html">Compile Model Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compilation/model_artifact_manifest.html">Model Artifact Manifest</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../compilation/package_libraries_and_weights.html">Package Libraries and Weights</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../compilation/define_new_models.html">Define New Model Architectures</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../compilation/configure_quantization.html">Configure Quantization</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Dependency Installation</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../install/tvm.html">Install TVM Unity Compiler</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install/tvm.html">Install TVM Compiler</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/mlc_llm.html">Install MLC LLM Python Package</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/conda.html">Install Conda</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/gpu.html">GPU Drivers and SDKs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/emcc.html">Install Wasm Build Environment</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Microserving API</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../microserving/tutorial.html">Implement LLM Cross-engine Orchestration Patterns</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Community</span></p>
 <ul>
@@ -384,10 +389,10 @@ usage:<span class="w"> </span>MLC<span class="w"> </span>LLM<span class="w"> </s
 <p>If it runs into error <code class="docutils literal notranslate"><span class="pre">command</span> <span class="pre">not</span> <span class="pre">found:</span> <span class="pre">mlc_llm</span></code>, try <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">mlc_llm</span> <span class="pre">--help</span></code>.</p>
 </div>
 <p><strong>Step 2. Verify TVM</strong></p>
-<p>To compile models, you also need to follow <a class="reference internal" href="../install/tvm.html#install-tvm-unity"><span class="std std-ref">Install TVM Unity Compiler</span></a>.
-Here we verify <code class="docutils literal notranslate"><span class="pre">tvm</span></code> quickly with command line (for full verification, see <a class="reference internal" href="../install/tvm.html#tvm-unity-validate"><span class="std std-ref">Validate TVM Installation</span></a>):</p>
+<p>To compile models, you also need to follow <a class="reference internal" href="../install/tvm.html#install-tvm"><span class="std std-ref">Install TVM Compiler</span></a>.
+Here we verify <code class="docutils literal notranslate"><span class="pre">tvm</span></code> quickly with command line (for full verification, see <a class="reference internal" href="../install/tvm.html#tvm-validate"><span class="std std-ref">Validate TVM Installation</span></a>):</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import tvm; print(tvm.__file__)&quot;</span>
-/some-path/lib/python3.11/site-packages/tvm/__init__.py
+/some-path/lib/python3.13/site-packages/tvm/__init__.py
 </pre></div>
 </div>
 </section>
@@ -557,7 +562,7 @@ to decrease memory usage. Otherwise, during runtime, you may run into issues lik
 
 ~/mlc-llm<span class="w"> </span>&gt;<span class="w"> </span>ls<span class="w"> </span>dist/RedPajama-INCITE-Chat-3B-v1-q4f16_1-MLC
 <span class="w">  </span>mlc-chat-config.json<span class="w">                             </span><span class="c1"># ===&gt; the chat config</span>
-<span class="w">  </span>ndarray-cache.json<span class="w">                               </span><span class="c1"># ===&gt; the model weight info</span>
+<span class="w">  </span>tensor-cache.json<span class="w">                               </span><span class="c1"># ===&gt; the model weight info</span>
 <span class="w">  </span>params_shard_0.bin<span class="w">                               </span><span class="c1"># ===&gt; the model weights</span>
 <span class="w">  </span>params_shard_1.bin
 <span class="w">  </span>...
@@ -628,7 +633,7 @@ on how to run it.</p>
     <div class="footerHeader">
       <div class="d-flex align-md-items-center justify-content-between flex-column flex-md-row">
         <div class="copywrite d-flex align-items-center">
-          <h5 id="copy-right-info">© 2023-2024 MLC LLM</h5>
+          <h5 id="copy-right-info">© 2023-2025 MLC LLM</h5>
         </div>
       </div>
 

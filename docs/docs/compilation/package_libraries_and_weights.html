@@ -47,7 +47,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Define New Model Architectures" href="define_new_models.html" />
-    <link rel="prev" title="Compile Model Libraries" href="compile_models.html" /> 
+    <link rel="prev" title="Model Artifact Manifest" href="model_artifact_manifest.html" /> 
 </head>
 
 <body class="wy-body-for-nav">
@@ -184,6 +184,7 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="convert_weights.html">Convert Model Weights</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compile_models.html">Compile Model Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model_artifact_manifest.html">Model Artifact Manifest</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Package Libraries and Weights</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#introduction">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#compilation-cache">Compilation Cache</a></li>
@@ -196,11 +197,15 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Dependency Installation</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../install/tvm.html">Install TVM Unity Compiler</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install/tvm.html">Install TVM Compiler</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/mlc_llm.html">Install MLC LLM Python Package</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/conda.html">Install Conda</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/gpu.html">GPU Drivers and SDKs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../install/emcc.html">Install Wasm Build Environment</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Microserving API</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../microserving/tutorial.html">Implement LLM Cross-engine Orchestration Patterns</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Community</span></p>
 <ul>
@@ -304,7 +309,7 @@ on using this packaging tool for iOS and Android deployment.</p>
 <section id="introduction">
 <h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h2>
 <p>To use <code class="docutils literal notranslate"><span class="pre">mlc_llm</span> <span class="pre">package</span></code>, we must clone the source code of <a class="reference external" href="https://github.com/mlc-ai/mlc-llm">MLC LLM</a>
-and <a class="reference external" href="https://llm.mlc.ai/docs/install/mlc_llm.html#option-1-prebuilt-package">install the MLC LLM and TVM Unity package</a>.
+and <a class="reference external" href="https://llm.mlc.ai/docs/install/mlc_llm.html#option-1-prebuilt-package">install the MLC LLM and TVM package</a>.
 Depending on the app we build, there might be some other dependencies, which are described in
 corresponding <a class="reference internal" href="../deploy/ios.html#deploy-ios"><span class="std std-ref">iOS</span></a> and <a class="reference internal" href="../deploy/android.html#deploy-android"><span class="std std-ref">Android</span></a> tutorials.</p>
 <p>After cloning, the basic usage of <code class="docutils literal notranslate"><span class="pre">mlc_llm</span> <span class="pre">package</span></code> is as the following.</p>
@@ -496,7 +501,7 @@ By default, it is <code class="docutils literal notranslate"><span class="pre">d
         <a href="define_new_models.html" class="btn btn-neutral float-right" title="Define New Model Architectures" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
-        <a href="compile_models.html" class="btn btn-neutral float-left" title="Compile Model Libraries" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+        <a href="model_artifact_manifest.html" class="btn btn-neutral float-left" title="Model Artifact Manifest" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
       
     </div>
 
@@ -505,7 +510,7 @@ By default, it is <code class="docutils literal notranslate"><span class="pre">d
     <div class="footerHeader">
       <div class="d-flex align-md-items-center justify-content-between flex-column flex-md-row">
         <div class="copywrite d-flex align-items-center">
-          <h5 id="copy-right-info">© 2023-2024 MLC LLM</h5>
+          <h5 id="copy-right-info">© 2023-2025 MLC LLM</h5>
         </div>
       </div>
 
