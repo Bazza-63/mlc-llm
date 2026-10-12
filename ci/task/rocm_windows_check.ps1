@@ -7,9 +7,11 @@
   2. PATH (ROCm entries present, setx truncation, duplicates, missing dirs)
   3. Install layout (DLLs, headers, LLVM, device bitcode)
   4. Tools on PATH (amdclang, amdclang++, hipcc, hipconfig, clang, ld.lld, llvm-config) and shadowing
-  5. HIP runtime DLL load + device enumeration (no compiler needed)
+  5. HIP runtime DLL load (no compiler): ROCm's amdhip64 by full path, never the driver's
+     System32 copy; later by-name loads must bind to it
   6. TVM-style device code path: OpenCL -> amdgcn object (+device libs) -> ld.lld -> .hsaco
-  7. HIP program: build with amdclang++ (fallback hipcc), run a kernel (expf/sqrtf) on the GPU, verify results,
+  7. HIP program: build with amdclang++ (fallback hipcc), delay-load amdhip64 from the ROCm
+     install (not System32), run a kernel (expf/sqrtf) on the GPU, verify results,
      and load the .hsaco from step 6 with hipModuleLoad (what TVM does at runtime)
   8. What TVM/MLC-LLM's current code would find (expected failures are reported as INFO)
 
@@ -212,7 +214,7 @@ foreach ($c in @($clangExe, $clangxxExe)) {
 }
 
 # ---------------------------------------------------------------------------
-Section "5. HIP runtime DLL load (no compiler)"
+Section "5. HIP runtime DLL load (ROCm copy by full path, no compiler)"
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -220,6 +222,10 @@ using System.Text;
 public static class RocmProbe {
   [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
   public static extern IntPtr LoadLibraryW(string name);
+  [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern IntPtr LoadLibraryExW(string name, IntPtr file, uint flags);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+  public static extern IntPtr GetModuleHandleW(string name);
   [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true)]
   public static extern IntPtr GetProcAddress(IntPtr h, string name);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
@@ -253,23 +259,30 @@ public static class RocmProbe {
 $deviceCount = 0
 if ($hipDlls.Count -gt 0) {
   $dllName = $hipDlls[0].Name
-  $h = Try-LoadLibrary $dllName   # bare name: resolved through the DLL search path / PATH
+  $rockDll = Join-Path $bin $dllName
+  $sysDll = Join-Path ([Environment]::SystemDirectory) $dllName
+  if (Test-Path -LiteralPath $sysDll) {
+    Info "Driver copy present: $sysDll (file version $((Get-Item -LiteralPath $sysDll).VersionInfo.FileVersion)); must NOT be used"
+    Info "  A bare-name load would pick it: Windows searches System32 before PATH"
+  }
+  Info "ROCm copy: $rockDll (file version $((Get-Item -LiteralPath $rockDll).VersionInfo.FileVersion))"
+  $pre = [RocmProbe]::GetModuleHandleW($dllName)
+  if ($pre -ne [IntPtr]::Zero) { Warn "$dllName was already loaded in this PowerShell process from $([RocmProbe]::ModulePath($pre)); open a new terminal" }
+  # LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS: dependencies resolve from the ROCm bin dir first
+  $h = [IntPtr]::Zero
+  try { $h = [RocmProbe]::LoadLibraryExW($rockDll, [IntPtr]::Zero, 0x1100) } catch { $h = [IntPtr]::Zero }
+  if ($null -eq $h) { $h = [IntPtr]::Zero }
   if ($h -eq [IntPtr]::Zero) {
-    $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-    Fail "LoadLibrary('$dllName') by name failed (Win32 error $err): not resolvable via PATH"
-    $h = Try-LoadLibrary (Join-Path $bin $dllName)
-    if ($h -eq [IntPtr]::Zero) { Fail "LoadLibrary by full path also failed (Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
+    Fail "LoadLibraryEx('$rockDll') failed (Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))"
   } else {
     $loaded = [RocmProbe]::ModulePath($h)
-    Pass "Loaded $dllName by name from $loaded"
-    $rockDll = Join-Path $bin $dllName
-    if ((Norm $loaded) -ne (Norm $rockDll)) {
-      $vLoaded = (Get-Item -LiteralPath $loaded).VersionInfo.FileVersion
-      $vRock = (Get-Item -LiteralPath $rockDll).VersionInfo.FileVersion
-      Warn "Windows loaded the driver's copy, not ROCm's (System32 is searched before PATH)"
-      Info "  loaded : $loaded  (file version $vLoaded)"
-      Info "  ROCm   : $rockDll  (file version $vRock)"
-    }
+    if ((Norm $loaded) -eq (Norm $rockDll)) { Pass "Loaded ROCm's HIP runtime by full path: $loaded" }
+    else { Fail "Requested $rockDll but Windows mapped $loaded" }
+    # Later by-name loads (TVM runtime, hipBLAS, rocBLAS importing amdhip64) must bind to the same module.
+    $byName = Try-LoadLibrary $dllName
+    $byNamePath = if ($byName -ne [IntPtr]::Zero) { [RocmProbe]::ModulePath($byName) } else { "<failed>" }
+    if ((Norm $byNamePath) -eq (Norm $rockDll)) { Pass "Later by-name LoadLibrary('$dllName') binds to the ROCm copy (System32 copy not loaded)" }
+    else { Fail "Later by-name LoadLibrary('$dllName') resolved to $byNamePath" }
   }
   if ($h -ne [IntPtr]::Zero) {
     $v = 0
@@ -350,6 +363,26 @@ if ($Arch -and ($clangxxExe -or $hipcc) -and $deviceCount -gt 0) {
   $src = Join-Path $tmp 'check.hip'
   Set-Content -LiteralPath $src -Encoding ASCII -Value @'
 #include <hip/hip_runtime.h>
+#if defined(_WIN32) && !defined(__HIP_DEVICE_COMPILE__)
+#include <windows.h>
+#include <delayimp.h>
+#include <cstdlib>
+#include <cstring>
+// amdhip64 is delay-loaded. This hook maps it to the full path in ROCM_CHECK_HIP_DLL (the
+// ROCm install) before Windows' search order can pick the driver's System32 copy. It also
+// covers the HIP fat-binary registration that runs before main().
+static FARPROC WINAPI RocmDelayHook(unsigned notify, PDelayLoadInfo info) {
+  if (notify != dliNotePreLoadLibrary) return nullptr;
+  const char* full = std::getenv("ROCM_CHECK_HIP_DLL");
+  if (!full) return nullptr;
+  const char* base = std::strrchr(full, '\\');
+  base = base ? base + 1 : full;
+  if (_stricmp(info->szDll, base) != 0) return nullptr;
+  return reinterpret_cast<FARPROC>(
+      LoadLibraryExA(full, nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS));
+}
+const PfnDliHook __pfnDliNotifyHook2 = RocmDelayHook;
+#endif
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -364,6 +397,19 @@ __global__ void vexp(float* y, const float* x, int n) {
 int main(int argc, char** argv) {
   int count = 0;
   CHECK(hipGetDeviceCount(&count));
+  int rtv = 0;
+  CHECK(hipRuntimeGetVersion(&rtv));
+  std::printf("HIP_RUNTIME=%d\n", rtv);
+#if defined(_WIN32)
+  {
+    const char* full = std::getenv("ROCM_CHECK_HIP_DLL");
+    const char* base = full ? std::strrchr(full, '\\') : nullptr;
+    HMODULE m = GetModuleHandleA(base ? base + 1 : "amdhip64_7.dll");
+    char path[1024] = {0};
+    if (m) GetModuleFileNameA(m, path, sizeof(path));
+    std::printf("HIP_DLL=%s\n", m ? path : "<not loaded>");
+  }
+#endif
   for (int d = 0; d < count; ++d) {
     hipDeviceProp_t p;
     CHECK(hipGetDeviceProperties(&p, d));
@@ -404,14 +450,17 @@ int main(int argc, char** argv) {
   if ($vsEnv) { Info "MSVC environment: $vsEnv" }
   else { Info "No Visual Studio developer environment loaded (amdclang++ normally works without it; hipcc may not)" }
   $exe = Join-Path $tmp 'check.exe'
+  $hipDllName = if ($hipDlls.Count -gt 0) { $hipDlls[0].Name } else { 'amdhip64_7.dll' }
+  $env:ROCM_CHECK_HIP_DLL = Join-Path $bin $hipDllName
+  $delay = @("-Wl,/DELAYLOAD:$hipDllName", '-ldelayimp')
   $libDir = Join-Path $root 'lib'
   $attempts = @()
   if ($clangxxExe) {
     $attempts += ,@{ Name = 'amdclang++'; Exe = $clangxxExe; Args = @('-x', 'hip', "--offload-arch=$Arch", "--rocm-path=$root",
-      "--rocm-device-lib-path=$bcDir", '-O2', $src, '--hip-link', '-fuse-ld=lld', "-L$libDir", '-lamdhip64', '-o', $exe) }
+      "--rocm-device-lib-path=$bcDir", '-O2', $src, '--hip-link', '-fuse-ld=lld', "-L$libDir", '-lamdhip64') + $delay + @('-o', $exe) }
   }
   if ($hipcc) {
-    $attempts += ,@{ Name = 'hipcc'; Exe = $hipcc; Args = @("--offload-arch=$Arch", '-O2', $src, '-o', $exe) }
+    $attempts += ,@{ Name = 'hipcc'; Exe = $hipcc; Args = @("--offload-arch=$Arch", '-O2', $src) + $delay + @('-o', $exe) }
   }
   $built = $null
   foreach ($a in $attempts) {
@@ -436,6 +485,14 @@ int main(int argc, char** argv) {
     $runArgs = @(); if ($hsaco) { $runArgs = @($hsaco) }
     $r = Run-Native $exe $runArgs
     $r.Out -split "`n" | Where-Object { $_ -match '^DEVICE' } | ForEach-Object { Info $_ }
+    $m = [regex]::Match($r.Out, 'HIP_DLL=(.+)')
+    if ($m.Success) {
+      $used = $m.Groups[1].Value.Trim()
+      if ((Norm $used) -eq (Norm $env:ROCM_CHECK_HIP_DLL)) { Pass "Program used ROCm's HIP runtime: $used" }
+      else { Fail "Program used $used instead of $($env:ROCM_CHECK_HIP_DLL)" }
+    }
+    $m = [regex]::Match($r.Out, 'HIP_RUNTIME=(\d+)')
+    if ($m.Success) { $v = [int]$m.Groups[1].Value; Info ("Program HIP runtime version: {0}.{1}.{2}" -f [math]::Floor($v / 10000000), [math]::Floor(($v % 10000000) / 100000), ($v % 100000)) }
     if ($r.Out -match 'KERNEL_MISMATCHES=0') { Pass "Kernel ran on GPU; expf/sqrtf results match CPU" }
     elseif ($r.Out -match 'KERNEL_MISMATCHES=(\d+)') { Fail "Kernel ran but $($Matches[1]) results are wrong" }
     else { Fail "Program failed (exit $($r.Code)):`n$($r.Out)" }

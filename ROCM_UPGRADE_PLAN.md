@@ -40,9 +40,9 @@ Results from `rocm_windows_check.ps1` on the reference install:
   `.hsaco`. What's broken is TVM's discovery and glue code, not the toolchain itself.
 - The runtime loads `amdhip64_7.dll` from **`C:\Windows\System32` (the Adrenalin driver's
   copy, HIP 7.12)**, not TheRock's `bin` (7.16). Windows searches System32 before `PATH`.
-  TVM will therefore compile with 7.16 headers but run on the driver's 7.12 runtime.
-  Decide whether to load the copy under `<root>/bin` explicitly (`LoadLibraryEx` with a
-  full path) or require driver ≥ SDK.
+  TVM would therefore compile with 7.16 headers but run on the driver's 7.12 runtime.
+  **Requirement: the driver's `System32\amdhip64_*.dll` must never be loaded.** Load the
+  ROCm install's copy by full path (see Phase 3, "Windows DLL loading").
 - hipBLAS, hipBLASLt and rocBLAS DLLs are present. RCCL and `hsa-runtime64` are absent.
 - Device bitcode: 61 ISA files (including 1101, 1201 and generic targets) and ABI 400/500/600.
   `oclc_wavefrontsize64_on`, `oclc_unsafe_math_*` and `oclc_finite_only_*` **still exist**.
@@ -55,8 +55,8 @@ Results from `rocm_windows_check.ps1` on the reference install:
   `amdclang`/`amdclang++` on Windows, not `hipcc`.**
 - The device reports `warpSize=32` (RDNA3), confirming that TVM's default
   `thread_warp_size=64` is wrong for this GPU.
-- The driver's `amdhip64_7.dll` (file 10.0.3683.0, HIP 7.12) and TheRock's (10.0.3684.0)
-  are adjacent builds, so the mismatch is low priority.
+- The driver's `amdhip64_7.dll` is file 10.0.3683.0 (HIP 7.12); TheRock's is 10.0.3684.0
+  (HIP 7.16). Even though the builds are adjacent, only the ROCm install's copy may be used.
 
 Corrections to the analysis below:
 - `FindROCM.cmake` does find `lib/amdhip64.lib` when given the root
@@ -150,9 +150,25 @@ Check a Windows install with `ci/task/rocm_windows_check.ps1`.
     only as a Linux fallback.
   - `have_matrixcore()`: the `major >= 8` heuristic is wrong for gfx9/11/12.
 - `python/tvm/support/utils.py` `which()`: use `shutil.which` (handles `PATHEXT`).
-- Windows DLL loading: `PATH` covers it for a system-wide install. As insurance for
-  conda and Python 3.8+ embedding, call `os.add_dll_directory(<root>/bin)` before loading
-  `tvm_runtime_rocm`.
+- **Windows DLL loading: never use the driver's `System32\amdhip64_*.dll`.** `PATH` does
+  not help, because the standard search order checks System32 before `PATH`, and
+  `os.add_dll_directory` does not outrank it either. Once a module named `amdhip64_7.dll`
+  is in the process, every later by-name import (`tvm_runtime_rocm`, hipBLAS, rocBLAS,
+  hipBLASLt) binds to it. So:
+  - C++ (covers every host, including the MLC-LLM CLI): link `tvm_runtime_rocm` with
+    `/DELAYLOAD:amdhip64_*.dll` (+ `delayimp.lib`). Install a `__pfnDliNotifyHook2`
+    `dliNotePreLoadLibrary` hook that calls
+    `LoadLibraryExW(<root>\bin\amdhip64_*.dll, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+    LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)`, with `<root>` resolved as in `FindROCM`
+    (`ROCM_PATH` → `HIP_PATH`). Fail with a clear error, never fall back silently, if the
+    resolved module is in System32.
+  - Python: in `tvm/libinfo` / `tvm_ffi` library loading, preload the same DLL with
+    `ctypes.WinDLL(<root>\bin\amdhip64_*.dll, winmode=0x1100)` before loading
+    `tvm_runtime_rocm` or `tvm_runtime_extra` (hipBLAS).
+  - The DLL name (`amdhip64_7.dll`) comes from the import library (`amdhip64.lib`). Detect
+    it at configure time instead of hardcoding it.
+  - Check: `ci/task/rocm_windows_check.ps1` steps 5 and 7 verify which copy is loaded,
+    including during HIP's pre-`main` fat-binary registration.
 
 ## Phase 4: TVM hipBLAS / hipBLASLt
 
