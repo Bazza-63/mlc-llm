@@ -1,7 +1,10 @@
 # Plan: upgrade ROCm support to ROCm 10.1 (Linux and Windows)
 
-Status: proposal. MLC-LLM currently documents ROCm 6.1/6.2 only. ROCm 10.1 ships on
-Linux and Windows, including as a tarball / TheRock build that can live anywhere on disk.
+Status: Phases 1–4 are implemented as a TVM patch in `3rdparty/patches/tvm-rocm/` (see its
+README for what is verified). They are waiting for a fork of `mlc-ai/relax`, so the
+submodule pointer can be bumped. Phases 0 and 5–7 are still open. MLC-LLM currently
+documents ROCm 6.1/6.2 only. ROCm 10.1 ships on Linux and Windows, including as a
+tarball / TheRock build that can live anywhere on disk.
 
 Most of the work is in the TVM submodule (`3rdparty/tvm`, upstream `mlc-ai/relax`); it
 must land there first, then MLC-LLM bumps the submodule.
@@ -115,9 +118,10 @@ Check a Windows install with `ci/task/rocm_windows_check.ps1`.
 
 - `rocm_device_api.cc`: replace the `hsa_init`/`hsa_shut_down` existence check with
   `hipGetDeviceCount`, which removes the HSA dependency.
-- `rocm_device_api.cc`: `hipHostMalloc` has been deprecated since ROCm 6; switch to
-  `hipExtHostAlloc`/`hipHostAlloc` **(verify removal status in 10.x)**.
-- Compile against 10.1 headers and fix any other removed `hip*` API.
+- `rocm_device_api.cc`: `hipHostMalloc` still exists and is not deprecated in the
+  `therock-10.1` headers; no change needed.
+- Done: `rocm_device_api.cc`, `rocm_module.cc` and the hipBLAS contrib compile against the
+  `therock-10.1` headers.
 
 ## Phase 3: TVM codegen, target and Python helpers
 
