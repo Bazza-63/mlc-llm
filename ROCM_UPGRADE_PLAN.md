@@ -169,6 +169,14 @@ Check a Windows install with `ci/task/rocm_windows_check.ps1`.
     it at configure time instead of hardcoding it.
   - Check: `ci/task/rocm_windows_check.ps1` steps 5 and 7 verify which copy is loaded,
     including during HIP's pre-`main` fat-binary registration.
+  - **Verified on the reference machine (VS 2022 Build Tools 14.44):** an `amdclang++`
+    program linked with `-Wl,/DELAYLOAD:amdhip64_7.dll -ldelayimp` and the hook above used
+    `C:\TheRock\build\bin\amdhip64_7.dll` (HIP 7.16.26385), never System32. It ran the
+    kernel correctly and loaded the `ld.lld`-linked `.hsaco`. Loading by full path from
+    Python/PowerShell also made later by-name loads bind to the ROCm copy. Windows-only
+    code in `.hip`/`.cu` sources must be guarded with
+    `#if defined(_WIN32) && !defined(__HIP_DEVICE_COMPILE__)`, since `_WIN32` is also defined
+    in the device pass.
 
 ## Phase 4: TVM hipBLAS / hipBLASLt
 
