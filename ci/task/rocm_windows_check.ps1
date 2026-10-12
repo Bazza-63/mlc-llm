@@ -402,7 +402,7 @@ int main(int argc, char** argv) {
 '@
   $vsEnv = Import-VsEnv
   if ($vsEnv) { Info "MSVC environment: $vsEnv" }
-  else { Warn "No MSVC environment found (Visual Studio 2022 / Build Tools with 'Desktop development with C++'). On Windows, amdclang++ and hipcc both use the MSVC C++ headers and CRT." }
+  else { Info "No Visual Studio developer environment loaded (amdclang++ normally works without it; hipcc may not)" }
   $exe = Join-Path $tmp 'check.exe'
   $libDir = Join-Path $root 'lib'
   $attempts = @()

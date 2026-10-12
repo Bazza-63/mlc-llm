@@ -48,9 +48,15 @@ Results from `rocm_windows_check.ps1` on the reference install:
   `oclc_wavefrontsize64_on`, `oclc_unsafe_math_*` and `oclc_finite_only_*` **still exist**.
   `oclc_daz_opt_on/off` and `oclc_correctly_rounded_sqrt_on/off` **are gone**, so TVM's
   `callback_rocm_bitcode_path()` raises `could not find bitcode oclc_daz_opt_on`.
-- `hipcc` needs the MSVC STL headers and the Windows SDK (Visual Studio 2022 or Build
-  Tools with "Desktop development with C++"). This applies to TVM's Windows build too,
-  and to `USE_THRUST`.
+- **Full device path verified end to end:** `amdclang++` built a HIP program without any
+  Visual Studio environment loaded. The kernel ran on the GPU and matched CPU results, and
+  `hipModuleLoad` loaded the `ld.lld`-linked `.hsaco` (TVM's runtime path). `hipcc` failed
+  in the same shell because it could not find the C++ standard headers. **Use
+  `amdclang`/`amdclang++` on Windows, not `hipcc`.**
+- The device reports `warpSize=32` (RDNA3), confirming that TVM's default
+  `thread_warp_size=64` is wrong for this GPU.
+- The driver's `amdhip64_7.dll` (file 10.0.3683.0, HIP 7.12) and TheRock's (10.0.3684.0)
+  are adjacent builds, so the mismatch is low priority.
 
 Corrections to the analysis below:
 - `FindROCM.cmake` does find `lib/amdhip64.lib` when given the root
@@ -99,8 +105,9 @@ Check a Windows install with `ci/task/rocm_windows_check.ps1`.
 - **`cmake/modules/ROCM.cmake`**
   - Make `hsa-runtime64` Linux-only.
   - Remove the obsolete `__HIP_PLATFORM_HCC__` define; keep `__HIP_PLATFORM_AMD__`.
-  - rocThrust currently requires `CXX=hipcc` (fatal otherwise); use CMake's `HIP` language
-    for `thrust.cu` instead.
+  - rocThrust currently requires `CXX=hipcc` (fatal otherwise). Use CMake's `HIP` language
+    for `thrust.cu` with `CMAKE_HIP_COMPILER=amdclang++`. On Windows `amdclang++` works
+    where `hipcc` fails (verified).
 - **`cmake/utils/FindRCCL.cmake`, `CMakeLists.txt` (RCCL block)**: hint
   `<root>/include/rccl` and `<root>/lib`. RCCL is Linux-only, so skip it on Windows.
 
