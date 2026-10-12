@@ -28,16 +28,50 @@ entries. Discovery must therefore treat an empty variable as unset and fall back
 Note there is **no `ROCM_PATH`** and nothing under `/opt/rocm`. Layout relative to the
 root: `include/`, `lib/`, `bin/` (DLLs), `lib/llvm/` (LLVM, `ld.lld`, device bitcode).
 
+### Verified on Windows (RX 7800 XT, gfx1101)
+
+Results from `rocm_windows_check.ps1` on the reference install:
+
+- Toolchain: `hipconfig --version` = 7.16 (HIP API numbering stays 7.x under ROCm
+  10.x, so every "ROCm 7" API change applies). AMD clang 24 (LLVM 24) with
+  `llvm-config.exe`, so TVM can be built against ROCm's own LLVM.
+- **TVM's device pipeline works with this toolchain.** Compiling OpenCL with device libs
+  from `HIP_DEVICE_LIB_PATH` and running `ld.lld --no-undefined -shared` produced a
+  `.hsaco`. What's broken is TVM's discovery and glue code, not the toolchain itself.
+- The runtime loads `amdhip64_7.dll` from **`C:\Windows\System32` (the Adrenalin driver's
+  copy, HIP 7.12)**, not TheRock's `bin` (7.16). Windows searches System32 before `PATH`.
+  TVM will therefore compile with 7.16 headers but run on the driver's 7.12 runtime.
+  Decide whether to load the copy under `<root>/bin` explicitly (`LoadLibraryEx` with a
+  full path) or require driver ≥ SDK.
+- hipBLAS, hipBLASLt and rocBLAS DLLs are present. RCCL and `hsa-runtime64` are absent.
+- Device bitcode: 61 ISA files (including 1101, 1201 and generic targets) and ABI 400/500/600.
+  `oclc_wavefrontsize64_on`, `oclc_unsafe_math_*` and `oclc_finite_only_*` **still exist**.
+  `oclc_daz_opt_on/off` and `oclc_correctly_rounded_sqrt_on/off` **are gone**, so TVM's
+  `callback_rocm_bitcode_path()` raises `could not find bitcode oclc_daz_opt_on`.
+- `hipcc` needs the MSVC STL headers and the Windows SDK (Visual Studio 2022 or Build
+  Tools with "Desktop development with C++"). This applies to TVM's Windows build too,
+  and to `USE_THRUST`.
+
+Corrections to the analysis below:
+- `FindROCM.cmake` does find `lib/amdhip64.lib` when given the root
+  (`-DUSE_ROCM=C:/TheRock/build`). It fails only because it ignores `HIP_PATH`.
+- `ROCM.cmake` already links `hsa-runtime64` only if found. The blocker is the
+  `#include <hsa/hsa.h>` / `hsa_init()` in `rocm_device_api.cc`.
+- `TVM_LLVM_VERSION` guards in `codegen_amdgpu.cc` only go up to 21. Building against
+  LLVM 24 will likely need new guards (Phase 0).
+
 ### Why the current code fails on this install
 
 | Location | Current behaviour | Result |
 |---|---|---|
-| `3rdparty/tvm/cmake/utils/FindROCM.cmake` | Looks at `USE_ROCM`, `$ROCM_PATH`, `/opt/rocm`; libraries only in `<root>/lib` | ROCm not found |
+| `3rdparty/tvm/cmake/utils/FindROCM.cmake` | Looks at `USE_ROCM`, `$ROCM_PATH`, `/opt/rocm` (not `HIP_PATH`) | ROCm not found unless `-DUSE_ROCM=<root>` is passed |
 | `3rdparty/tvm/python/tvm/support/rocm.py` `find_rocm_path()` | `ROCM_PATH` → `which hipcc` (subprocess) → `/opt/rocm` | `RuntimeError` |
-| `rocm.py` `callback_rocm_bitcode_path()` | `<root>/amdgcn/bitcode`, else `/opt/rocm/lib` | Bitcode not found (real path: `<root>/lib/llvm/amdgcn/bitcode`) |
+| `rocm.py` `callback_rocm_bitcode_path()` | `<root>/amdgcn/bitcode`, else `/opt/rocm/lib`; requires `oclc_daz_opt_*` and `oclc_correctly_rounded_sqrt_*` | Bitcode not found (real path: `<root>/lib/llvm/amdgcn/bitcode`), and four required files no longer exist |
 | `rocm.py` `find_lld()` + `tvm/support/utils.py` `which()` | `which()` never appends `.exe` | `ld.lld.exe` not found despite being on `PATH` |
 | `rocm.py` `get_rocm_arch()` | Runs `<root>/bin/rocminfo` | Not available on Windows; silently falls back to `gfx900` |
-| `3rdparty/tvm/cmake/modules/ROCM.cmake` + `rocm_device_api.cc` | Links and calls `hsa-runtime64` (`hsa_init`) | No HSA runtime on Windows |
+| `rocm_device_api.cc` | Includes `hsa/hsa.h` and calls `hsa_init` (`ROCM.cmake` already treats the library as optional) | No HSA runtime on Windows, so the link fails |
+
+Check a Windows install with `ci/task/rocm_windows_check.ps1`.
 
 ## Phase 0: toolchain baseline
 
@@ -95,10 +129,12 @@ root: `include/`, `lib/`, `bin/` (DLLs), `lib/llvm/` (LLVM, `ld.lld`, device bit
     `rocm-sdk path --root` **(verify)**.
   - `callback_rocm_bitcode_path()`: `HIP_DEVICE_LIB_PATH` (if non-empty) → `<root>/lib/llvm/amdgcn/bitcode`
     → `<root>/amdgcn/bitcode`. Fix the stale list:
-    - `irif` no longer exists.
-    - Choose `oclc_isa_version_<gfx>` from the target `mcpu` instead of the fixed 803/900/906/1030 list.
-    - Choose `oclc_wavefrontsize64_on` only for wave64 targets, if the file exists.
-    - Match `oclc_abi_version_*` to the code-object version LLVM emits.
+    - `irif`, `oclc_daz_opt_on/off` and `oclc_correctly_rounded_sqrt_on/off` no longer
+      exist (verified on Windows). Drop them or make them optional.
+    - Choose `oclc_isa_version_<gfx>` from the target `mcpu` instead of the fixed
+      803/900/906/1030 list (gfx1101 is present on disk but never linked today).
+    - `oclc_wavefrontsize64_on` still exists. Link it only for wave64 targets.
+    - Match `oclc_abi_version_*` (400/500/600 available) to the code-object version LLVM emits.
 
     This needs `mcpu` passed into the callback (`codegen_amdgpu.cc` `BuildAMDGPU`).
   - `find_lld()`: `LLVM_PATH/bin` (if non-empty) → `<root>/lib/llvm/bin` → `PATH` via `shutil.which`.
