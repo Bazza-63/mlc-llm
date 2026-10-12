@@ -21,6 +21,10 @@ LLVM_PATH           = C:\TheRock\build\lib\llvm
 PATH               += C:\TheRock\build\bin;C:\TheRock\build\lib\llvm\bin
 ```
 
+AMD's instructions may later clear these with `setx <VAR> "" /M`, leaving only the `PATH`
+entries. Discovery must therefore treat an empty variable as unset and fall back to
+`PATH`.
+
 Note there is **no `ROCM_PATH`** and nothing under `/opt/rocm`. Layout relative to the
 root: `include/`, `lib/`, `bin/` (DLLs), `lib/llvm/` (LLVM, `ld.lld`, device bitcode).
 
@@ -50,8 +54,10 @@ root: `include/`, `lib/`, `bin/` (DLLs), `lib/llvm/` (LLVM, `ld.lld`, device bit
 ## Phase 1: TVM build system
 
 - **`cmake/utils/FindROCM.cmake`**
-  - Root search order: `USE_ROCM=<path>` → `$ENV{ROCM_PATH}` → `$ENV{HIP_PATH}` →
-    `/opt/rocm` (non-Windows only) → `FATAL_ERROR` that names the variables.
+  - Root search order: `USE_ROCM=<path>` → `$ENV{ROCM_PATH}` → `$ENV{HIP_PATH}` (empty
+    values count as unset) → root derived from `PATH` (`find_program(hipcc|amdclang|ld.lld)`
+    in `<root>/bin` or `<root>/lib/llvm/bin`) → `/opt/rocm` (non-Windows only) →
+    `FATAL_ERROR`.
   - Search `lib`, `lib64`, `bin`; on Windows find `amdhip64.lib` (import lib) and `.dll`.
   - Drop the pre-3.7 `hip_hcc` fallback. Report the ROCm version.
   - Preferably use `find_package(hip CONFIG)` / `hipblas` / `hipblaslt` / `rocthrust`
@@ -83,10 +89,11 @@ root: `include/`, `lib/`, `bin/` (DLLs), `lib/llvm/` (LLVM, `ld.lld`, device bit
     or `hipDeviceAttributeWarpSize`.
   - Delete the `version < 305` / `-code-object-v3` branch (pre-ROCm 4).
 - `python/tvm/support/rocm.py`
-  - `find_rocm_path()`: same order as CMake (`ROCM_PATH` → `HIP_PATH` → `/opt/rocm` on
-    Linux). No `which` subprocess. Optional fallback for pip/TheRock wheels:
+  - `find_rocm_path()`: same order as CMake (`ROCM_PATH` → `HIP_PATH` → root derived from
+    `PATH` via `shutil.which` → `/opt/rocm` on Linux), skipping empty values (today
+    `"ROCM_PATH" in os.environ` accepts `""`). No `which` subprocess. Optional fallback for pip/TheRock wheels:
     `rocm-sdk path --root` **(verify)**.
-  - `callback_rocm_bitcode_path()`: `HIP_DEVICE_LIB_PATH` → `<root>/lib/llvm/amdgcn/bitcode`
+  - `callback_rocm_bitcode_path()`: `HIP_DEVICE_LIB_PATH` (if non-empty) → `<root>/lib/llvm/amdgcn/bitcode`
     → `<root>/amdgcn/bitcode`. Fix the stale list:
     - `irif` no longer exists.
     - Choose `oclc_isa_version_<gfx>` from the target `mcpu` instead of the fixed 803/900/906/1030 list.
@@ -94,7 +101,7 @@ root: `include/`, `lib/`, `bin/` (DLLs), `lib/llvm/` (LLVM, `ld.lld`, device bit
     - Match `oclc_abi_version_*` to the code-object version LLVM emits.
 
     This needs `mcpu` passed into the callback (`codegen_amdgpu.cc` `BuildAMDGPU`).
-  - `find_lld()`: `LLVM_PATH/bin` → `<root>/lib/llvm/bin` → `PATH` via `shutil.which`.
+  - `find_lld()`: `LLVM_PATH/bin` (if non-empty) → `<root>/lib/llvm/bin` → `PATH` via `shutil.which`.
     Drop the hardcoded `/opt/rocm/llvm/bin`.
   - `get_rocm_arch()`: use the runtime's `gcnArchName` (`tvm.rocm(0)`), with `rocminfo`
     only as a Linux fallback.
