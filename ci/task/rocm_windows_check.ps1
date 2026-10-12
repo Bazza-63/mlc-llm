@@ -362,6 +362,7 @@ $hipcc = Find-RocmTool 'hipcc'
 if ($Arch -and ($clangxxExe -or $hipcc) -and $deviceCount -gt 0) {
   $src = Join-Path $tmp 'check.hip'
   Set-Content -LiteralPath $src -Encoding ASCII -Value @'
+#define _CRT_SECURE_NO_WARNINGS
 #include <hip/hip_runtime.h>
 #if defined(_WIN32) && !defined(__HIP_DEVICE_COMPILE__)
 #include <windows.h>
@@ -400,7 +401,7 @@ int main(int argc, char** argv) {
   int rtv = 0;
   CHECK(hipRuntimeGetVersion(&rtv));
   std::printf("HIP_RUNTIME=%d\n", rtv);
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(__HIP_DEVICE_COMPILE__)
   {
     const char* full = std::getenv("ROCM_CHECK_HIP_DLL");
     const char* base = full ? std::strrchr(full, '\\') : nullptr;
