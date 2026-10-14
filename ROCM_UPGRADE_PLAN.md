@@ -7,7 +7,7 @@ discovery works across install layouts, and the `tvm.support.rocm` discovery and
 selection tests pass. On Windows (TheRock 10.1, LLVM 24, RX 7800 XT gfx1101) TVM and MLC-LLM
 build with `ci/task/build_rocm_windows.ps1`, and the smoke test passes: the HIP runtime loads
 from the ROCm install (not System32) and a TVM kernel using ocml exp/sqrt runs on the GPU
-with correct results. Not yet verified: compiling and running a model. Phases 0 and 5–7 are still open. MLC-LLM currently
+with correct results, and Qwen2.5-0.5B-Instruct (q4f16_1) compiles, runs and chats correctly (375 tok/s prefill, 287 tok/s decode). Two codegen bugs were fixed on the way: the LLVM codegen cast typed views over merged shared allocations to the global address space (GPU fault / driver reset in the attention kernel), and the AMDGPU shared-memory barrier now carries workgroup fences like `__syncthreads()`. Phases 0 and 5–7 are still open. MLC-LLM currently
 documents ROCm 6.1/6.2 only. ROCm 10.1 ships on Linux and Windows, including as a
 tarball / TheRock build that can live anywhere on disk.
 
