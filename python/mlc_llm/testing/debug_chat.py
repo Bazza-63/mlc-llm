@@ -336,13 +336,13 @@ class DebugChat:
                 image_input = data_input.image
                 if data_input.image.device != self.device:
                     image_input = data_input.image.copyto(self.device)
-                embeddings.append(self.embed_image_func(image_input, self.params).asnumpy())
+                embeddings.append(self.embed_image_func(image_input, self.params).numpy())
             else:
                 # Process token data
                 data_input = tvm.runtime.tensor(
                     np.array(data_input).astype("int32"), device=self.device
                 )
-                embeddings.append(self.embed_func(data_input, self.params).asnumpy())
+                embeddings.append(self.embed_func(data_input, self.params).numpy())
         # for embedding in embeddings:
         #     print(f"embedding.shape: {embedding.shape}")
 

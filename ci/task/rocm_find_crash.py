@@ -50,15 +50,19 @@ class CrashLog:
 class SyncInstrument:
     """Relax VM instrument: log before each call, sync the GPU after it."""
 
-    def __init__(self, log: CrashLog, device):
+    def __init__(self, log: CrashLog, device, debug_out: Path):
         self.log = log
         self.device = device
         self.counter = 0
         self.phase = "init"
+        self.debug_out = debug_out  # DebugChat saves logits.npz here
+        debug_out.mkdir(parents=True, exist_ok=True)
 
     def reset(self, debug_out: Path) -> None:
         # Called by DebugChat between prefill and each decode step.
-        self.phase = Path(debug_out).name
+        self.debug_out = Path(debug_out)
+        self.debug_out.mkdir(parents=True, exist_ok=True)
+        self.phase = self.debug_out.name
         self.log.write(f"PHASE {self.phase}")
 
     def __call__(self, func, name, before_run, ret_val, *args):
@@ -90,15 +94,21 @@ def main() -> int:
     log.write(f"model={args.model} lib={args.model_lib} device={args.device}")
     log.write(f"AMD_SERIALIZE_KERNEL={os.environ.get('AMD_SERIALIZE_KERNEL', '')}")
 
+    import tvm
+
     from mlc_llm.support.auto_device import detect_device
     from mlc_llm.testing.debug_chat import DebugChat
 
+    # Older mlc_llm.testing.debug_chat calls Tensor.asnumpy(), which TVM renamed to numpy().
+    if not hasattr(tvm.runtime.Tensor, "asnumpy"):
+        tvm.runtime.Tensor.asnumpy = tvm.runtime.Tensor.numpy
+
     device = detect_device(args.device)
     log.write(f"device: {device} name={device.device_name} warp={device.warp_size}")
-    instrument = SyncInstrument(log, device)
 
     log.write("PHASE load library and parameters")
     with tempfile.TemporaryDirectory() as tmp:
+        instrument = SyncInstrument(log, device, Path(tmp) / "prefill")
         chat = DebugChat(
             model=args.model,
             model_lib=args.model_lib,
