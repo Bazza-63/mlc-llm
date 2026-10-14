@@ -12,6 +12,9 @@
     test   Smoke test: ROCm device, target, which amdhip64 DLL is loaded, and a TVM kernel
            compiled for the GPU and run on it.
 
+  Builds use Ninja with one compile job per logical CPU (-Jobs to override, e.g. if memory
+  runs out: each LLVM-heavy compile can take 1-2 GB).
+
   Everything is logged to -Log (default build_rocm_windows.log in the repo root). The
   script stops at the first failing stage; rerun with -Stage <stage> to resume there.
 
@@ -28,6 +31,7 @@ param(
   [string]$LlvmConfig = '',
   [string]$Venv = '',
   [string]$Python = 'python',
+  [int]$Jobs = 0,
   [string]$Log = ''
 )
 
@@ -53,6 +57,19 @@ function Run([string]$what, [string]$exe, [string[]]$argList) {
   if ($LASTEXITCODE -ne 0) { Die "$what failed (exit $LASTEXITCODE)" }
 }
 function ToCMake([string]$p) { return $p.Replace('\', '/') }
+
+# CMake cannot switch generator inside an existing build directory ("generator mismatch"),
+# so clear a build directory configured by an earlier Visual Studio / NMake run.
+function Reset-NonNinjaBuild([string]$buildDir) {
+  $cache = Join-Path $buildDir 'CMakeCache.txt'
+  if (-not (Test-Path -LiteralPath $cache)) { return }
+  $gen = (Select-String -LiteralPath $cache -Pattern '^CMAKE_GENERATOR:INTERNAL=(.*)$' |
+    Select-Object -First 1).Matches.Groups[1].Value
+  if ($gen -ne 'Ninja') {
+    Say "Removing $buildDir (configured with '$gen'; switching to Ninja)" 'Yellow'
+    Remove-Item -LiteralPath $buildDir -Recurse -Force
+  }
+}
 
 function Import-VsEnv {
   if ($env:INCLUDE -and $env:VCToolsInstallDir) { return 'already active' }
@@ -135,9 +152,21 @@ if (-not (Test-Path -LiteralPath $VenvPy)) { Die "venv missing at ${Venv}: run w
 # Put the venv's cmake/ninja first on PATH for the builds.
 $env:PATH = (Join-Path $Venv 'Scripts') + ';' + $env:PATH
 
+# Parallel builds: Ninja runs one compile per job. The Visual Studio generator (MSBuild) and
+# NMake, which CMake otherwise picks here, compile mostly one file at a time.
+if ($Jobs -le 0) { $Jobs = [Environment]::ProcessorCount }
+if (Get-Command ninja -ErrorAction SilentlyContinue) {
+  $env:CMAKE_GENERATOR = 'Ninja'
+} else {
+  Say '[WARN] ninja not found; builds may not use all cores (rerun with -Stage venv)' 'Yellow'
+}
+$env:CMAKE_BUILD_PARALLEL_LEVEL = "$Jobs"
+Say "Build:       generator=$($env:CMAKE_GENERATOR) jobs=$Jobs"
+
 # ---------------------------------------------------------------------------
 if ($todo -contains 'ffi') {
   Say "`n== ffi ==" 'Yellow'
+  Reset-NonNinjaBuild (Join-Path $Repo '3rdparty\tvm\3rdparty\tvm-ffi\build')
   Run 'apache-tvm-ffi' $VenvPy @('-m', 'pip', 'install', '-v', '--no-build-isolation',
     (Join-Path $Repo '3rdparty\tvm\3rdparty\tvm-ffi'))
 }
@@ -146,6 +175,7 @@ if ($todo -contains 'ffi') {
 if ($todo -contains 'tvm') {
   Say "`n== tvm ==" 'Yellow'
   $root = ToCMake $RocmRoot
+  Reset-NonNinjaBuild (Join-Path $Repo '3rdparty\tvm\build')
   # USE_Z3 needs mlc-z3-static, which may not have a Windows wheel; orcjit is optional.
   Run 'apache-tvm (compiler + ROCm runtime)' $VenvPy @('-m', 'pip', 'install', '-v',
     '--no-build-isolation', '--no-deps',
@@ -176,6 +206,7 @@ set(USE_OPENCL OFF)
   # Conda's GNU link.exe can shadow the MSVC linker and break the Rust build.
   $badLink = Get-Command link.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -match 'usr\\bin' }
   if ($badLink) { Say "[WARN] non-MSVC link.exe on PATH: $($badLink.Source -join ', ')" 'Yellow' }
+  Reset-NonNinjaBuild (Join-Path $Repo 'build')
   Run 'mlc-llm' $VenvPy @('-m', 'pip', 'install', '-v', $Repo)
 }
 
