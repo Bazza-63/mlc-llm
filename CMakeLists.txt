@@ -97,7 +97,11 @@ add_library(mlc_llm SHARED $<TARGET_OBJECTS:mlc_llm_objs>)
 add_library(mlc_llm_static STATIC $<TARGET_OBJECTS:mlc_llm_objs>)
 add_dependencies(mlc_llm_static tokenizers_cpp sentencepiece-static
                  tokenizers_c tvm_runtime tvm_runtime_extra)
-set_target_properties(mlc_llm_static PROPERTIES OUTPUT_NAME mlc_llm)
+# On MSVC the shared library's import library is already mlc_llm.lib, so the static
+# library keeps its own name there (Ninja rejects two rules for one output).
+if(NOT MSVC)
+  set_target_properties(mlc_llm_static PROPERTIES OUTPUT_NAME mlc_llm)
+endif()
 
 target_link_libraries(mlc_llm PUBLIC tvm_runtime)
 target_link_libraries(mlc_llm PRIVATE tvm_runtime_extra)
