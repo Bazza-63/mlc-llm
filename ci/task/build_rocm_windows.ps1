@@ -176,7 +176,7 @@ if ($todo -contains 'tvm') {
   Say "`n== tvm ==" 'Yellow'
   $root = ToCMake $RocmRoot
   Reset-NonNinjaBuild (Join-Path $Repo '3rdparty\tvm\build')
-  # USE_Z3 needs mlc-z3-static, which may not have a Windows wheel; orcjit is optional.
+  # USE_Z3 needs mlc-z3-static, which may not have a Windows wheel.
   Run 'apache-tvm (compiler + ROCm runtime)' $VenvPy @('-m', 'pip', 'install', '-v',
     '--no-build-isolation', '--no-deps',
     "--config-settings=cmake.define.USE_ROCM=$root",
@@ -186,6 +186,13 @@ if ($todo -contains 'tvm') {
     '--config-settings=cmake.define.HIDE_PRIVATE_SYMBOLS=ON',
     '--config-settings=build.verbose=true',
     (Join-Path $Repo '3rdparty\tvm'))
+  # --no-deps above also skips TVM's prebuilt LLVM JIT runtime (apache-tvm-ffi-orcjit), which
+  # running host-side code needs (e.g. calling a compiled module directly). Install the
+  # version TVM pins; it has a win_amd64 wheel.
+  $pin = Select-String -LiteralPath (Join-Path $Repo '3rdparty\tvm\pyproject.toml') `
+    -Pattern '"(apache-tvm-ffi-orcjit[^"]*)"' | Select-Object -First 1
+  $orcjit = if ($pin) { $pin.Matches[0].Groups[1].Value } else { 'apache-tvm-ffi-orcjit' }
+  Run $orcjit $VenvPy @('-m', 'pip', 'install', '--no-deps', $orcjit)
 }
 
 # ---------------------------------------------------------------------------
