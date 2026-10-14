@@ -54,6 +54,9 @@ dependencies = [
   "uvicorn",
 ]
 
+[project.scripts]
+mlc_llm = "mlc_llm.__main__:main"
+
 [project.urls]
 Homepage = "https://llm.mlc.ai/"
 Documentation = "https://llm.mlc.ai/docs/"
