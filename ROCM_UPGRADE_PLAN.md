@@ -4,8 +4,10 @@ Status: Phases 1–4 are implemented on the `rocm-10.1-support` branch of the TV
 `Bazza-63/relax`, which `3rdparty/tvm` now tracks (`.gitmodules`). Verified so far: it compiles
 against the real `therock-10.1` HIP/hipBLAS headers (LLVM 18 for codegen), CMake ROCm
 discovery works across install layouts, and the `tvm.support.rocm` discovery and bitcode
-selection tests pass. Not yet verified: a full Windows build with TheRock's LLVM 24, and
-compiling and running a model. Phases 0 and 5–7 are still open. MLC-LLM currently
+selection tests pass. On Windows (TheRock 10.1, LLVM 24, RX 7800 XT gfx1101) TVM and MLC-LLM
+build with `ci/task/build_rocm_windows.ps1`, and the smoke test passes: the HIP runtime loads
+from the ROCm install (not System32) and a TVM kernel using ocml exp/sqrt runs on the GPU
+with correct results. Not yet verified: compiling and running a model. Phases 0 and 5–7 are still open. MLC-LLM currently
 documents ROCm 6.1/6.2 only. ROCm 10.1 ships on Linux and Windows, including as a
 tarball / TheRock build that can live anywhere on disk.
 
