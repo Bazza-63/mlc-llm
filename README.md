@@ -1,5 +1,42 @@
 <div align="center">
 
+# MLC LLM on ROCm 10 / Windows 11
+
+**A fork of [mlc-ai/mlc-llm](https://github.com/mlc-ai/mlc-llm) that builds and runs on ROCm 10.x (AMD "TheRock" builds), on Windows 11 and Linux.**
+
+</div>
+
+> **Fork notice.** This is an independent fork of MLC LLM (Apache-2.0) and is not affiliated with
+> or endorsed by the upstream project. Everything not listed below is upstream work by the
+> [MLC LLM contributors](CONTRIBUTORS.md). The matching TVM fork is
+> [`Bazza-63/tvm-relax-rocm-10-win`](https://github.com/Bazza-63/tvm-relax-rocm-10-win)
+> (branch `rocm-10.1-support`, a fork of [mlc-ai/relax](https://github.com/mlc-ai/relax)),
+> tracked as the `3rdparty/tvm` submodule.
+
+**What this fork changes**
+
+- TVM's ROCm backend works with ROCm 10.x: HIP 7.x API, hipBLAS/hipBLASLt discovery, new device
+  bitcode layout, LLVM 24, RDNA wave32.
+- Windows support: the HIP runtime is loaded from the ROCm install by full path (never from
+  `System32`), MSVC-targeted host code for compiled model libraries, Ninja builds.
+- Code generation fixes found on gfx1101 (shared-memory address spaces, barrier fences).
+- `ci/task/build_rocm_windows.ps1` builds everything; `ci/task/rocm_*.py` are diagnostics.
+
+**Status.** Verified on one machine: Windows 11, ROCm 10.1 (TheRock), RX 7800 XT (gfx1101),
+Qwen2.5-0.5B-Instruct (q4f16_1). Other GPUs, models and Linux are untested. See
+[ROCM_UPGRADE_PLAN.md](ROCM_UPGRADE_PLAN.md) for the details and what is still open.
+
+**Build on Windows**
+
+```powershell
+.\ci\task\init_submodules.ps1
+powershell -ExecutionPolicy Bypass -File .\ci\task\build_rocm_windows.ps1
+```
+
+---
+
+<div align="center">
+
 # MLC LLM
 
 [![Installation](https://img.shields.io/badge/docs-latest-green)](https://llm.mlc.ai/docs/)

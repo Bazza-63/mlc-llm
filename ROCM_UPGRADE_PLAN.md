@@ -1,7 +1,7 @@
 # Plan: upgrade ROCm support to ROCm 10.1 (Linux and Windows)
 
 Status: Phases 1–4 are implemented on the `rocm-10.1-support` branch of the TVM fork
-`Bazza-63/relax`, which `3rdparty/tvm` now tracks (`.gitmodules`). Verified so far: it compiles
+`Bazza-63/tvm-relax-rocm-10-win`, which `3rdparty/tvm` now tracks (`.gitmodules`). Verified so far: it compiles
 against the real `therock-10.1` HIP/hipBLAS headers (LLVM 18 for codegen), CMake ROCm
 discovery works across install layouts, and the `tvm.support.rocm` discovery and bitcode
 selection tests pass. On Windows (TheRock 10.1, LLVM 24, RX 7800 XT gfx1101) TVM and MLC-LLM
