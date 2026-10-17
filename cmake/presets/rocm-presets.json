@@ -1,0 +1,92 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "rocm-env",
+      "hidden": true,
+      "description": "ROCm location, GPU architecture and the variables ROCm's CMake packages and HIP projects look for. Override ROCM_PATH / ROCM_GPU_ARCH in the preset that inherits this.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "environment": {
+        "HIP_PATH": "$env{ROCM_PATH}",
+        "HIP_PLATFORM": "amd",
+        "ROCM_GPU_ARCH": "gfx1101"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_PREFIX_PATH": "$env{ROCM_PATH}",
+        "ROCM_PATH": "$env{ROCM_PATH}",
+        "HIP_PATH": "$env{ROCM_PATH}",
+        "CMAKE_HIP_PLATFORM": "amd",
+        "CMAKE_HIP_ARCHITECTURES": "$env{ROCM_GPU_ARCH}",
+        "GPU_TARGETS": "$env{ROCM_GPU_ARCH}",
+        "AMDGPU_TARGETS": "$env{ROCM_GPU_ARCH}"
+      }
+    },
+    {
+      "name": "rocm-windows",
+      "hidden": true,
+      "inherits": "rocm-env",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "environment": {
+        "ROCM_PATH": "C:/TheRock/build",
+        "PATH": "$env{ROCM_PATH}/bin;$env{ROCM_PATH}/lib/llvm/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_HIP_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang++.exe"
+      },
+      "vendor": { "jetbrains.com/clion": { "toolchain": "Visual Studio" } }
+    },
+    {
+      "name": "rocm-linux",
+      "hidden": true,
+      "inherits": "rocm-env",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "environment": {
+        "ROCM_PATH": "/opt/rocm",
+        "PATH": "$env{ROCM_PATH}/bin:$env{ROCM_PATH}/lib/llvm/bin:$penv{PATH}",
+        "LD_LIBRARY_PATH": "$env{ROCM_PATH}/lib:$penv{LD_LIBRARY_PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_HIP_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang++"
+      }
+    },
+    {
+      "name": "rocm-windows-msvc",
+      "displayName": "ROCm / Windows (MSVC host, AMD clang for HIP)",
+      "description": "C/C++ with MSVC cl.exe; .hip files (CMake HIP language) with ROCm's clang++.",
+      "inherits": "rocm-windows",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe"
+      }
+    },
+    {
+      "name": "rocm-windows-amdclang",
+      "displayName": "ROCm / Windows (AMD clang-cl host, AMD clang for HIP)",
+      "description": "C/C++ with ROCm's clang-cl against the MSVC headers and libraries; .hip files with ROCm's clang++.",
+      "inherits": "rocm-windows",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang-cl.exe"
+      }
+    },
+    {
+      "name": "rocm-linux-amdclang",
+      "displayName": "ROCm / Linux (AMD clang)",
+      "description": "C/C++ and HIP with ROCm's clang.",
+      "inherits": "rocm-linux",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang",
+        "CMAKE_CXX_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang++"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "rocm-windows-msvc", "configurePreset": "rocm-windows-msvc" },
+    { "name": "rocm-windows-amdclang", "configurePreset": "rocm-windows-amdclang" },
+    { "name": "rocm-linux-amdclang", "configurePreset": "rocm-linux-amdclang" }
+  ]
+}
