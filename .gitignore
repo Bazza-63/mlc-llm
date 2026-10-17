@@ -322,3 +322,6 @@ gallery/how_to/work_with_microtvm/micro_tvmc.py
 .gdb_history
 
 dist
+
+# Machine-specific CMake presets (CLion, VS Code)
+CMakeUserPresets.json

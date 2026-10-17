@@ -1,0 +1,56 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "win-rocm-base",
+      "hidden": true,
+      "description": "Windows + ROCm (TheRock). Override ROCM_PATH in CMakeUserPresets.json if ROCm is not in C:/TheRock/build.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-${presetName}",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "environment": {
+        "ROCM_PATH": "C:/TheRock/build",
+        "HIP_PATH": "$env{ROCM_PATH}",
+        "PATH": "$env{ROCM_PATH}/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "USE_ROCM": "$env{ROCM_PATH}",
+        "USE_HIPBLAS": "ON",
+        "USE_CUDA": "OFF",
+        "USE_VULKAN": "OFF",
+        "USE_METAL": "OFF",
+        "USE_OPENCL": "OFF"
+      },
+      "vendor": {
+        "jetbrains.com/clion": { "toolchain": "Visual Studio" }
+      }
+    },
+    {
+      "name": "win-rocm-msvc",
+      "displayName": "Windows ROCm (MSVC cl)",
+      "description": "Host code with MSVC cl.exe, ROCm runtime and hipBLAS from TheRock. Same setup as ci/task/build_rocm_windows.ps1.",
+      "inherits": "win-rocm-base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe"
+      }
+    },
+    {
+      "name": "win-rocm-amdclang",
+      "displayName": "Windows ROCm (AMD clang-cl, experimental)",
+      "description": "Host code with TheRock's clang-cl against the MSVC headers and libraries. Not yet verified.",
+      "inherits": "win-rocm-base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "$env{ROCM_PATH}/lib/llvm/bin/clang-cl.exe"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "win-rocm-msvc", "configurePreset": "win-rocm-msvc", "targets": ["mlc_llm"] },
+    { "name": "win-rocm-amdclang", "configurePreset": "win-rocm-amdclang", "targets": ["mlc_llm"] }
+  ]
+}
